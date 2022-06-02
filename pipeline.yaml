@@ -1,0 +1,198 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: github-issue-summarization-
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.0.1, pipelines.kubeflow.org/pipeline_compilation_time: '2020-09-30T14:27:51.713193',
+    pipelines.kubeflow.org/pipeline_spec: '{"description": "Demonstrate Tensor2Tensor-based
+      training and TF-Serving", "inputs": [{"default": "2019300", "name": "train_steps",
+      "optional": true, "type": "Integer"}, {"default": "YOUR_PROJECT_HERE", "name":
+      "project", "optional": true, "type": "String"}, {"default": "YOUR_GITHUB_TOKEN_HERE",
+      "name": "github_token", "optional": true, "type": "String"}, {"default": "gs://YOUR_GCS_DIR_HERE",
+      "name": "working_dir", "optional": true, "type": "GCSPath"}, {"default": "gs://aju-dev-demos-codelabs/kubecon/model_output_tbase.bak2019000/",
+      "name": "checkpoint_dir", "optional": true, "type": "GCSPath"}, {"default":
+      "true", "name": "deploy_webapp", "optional": true, "type": "String"}, {"default":
+      "gs://aju-dev-demos-codelabs/kubecon/t2t_data_gh_all/", "name": "data_dir",
+      "optional": true, "type": "GCSPath"}], "name": "Github issue summarization"}'}
+  labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.0.1}
+spec:
+  entrypoint: github-issue-summarization
+  templates:
+  - name: condition-1
+    inputs:
+      parameters:
+      - {name: github_token}
+    dag:
+      tasks:
+      - name: webapp
+        template: webapp
+        arguments:
+          parameters:
+          - {name: github_token, value: '{{inputs.parameters.github_token}}'}
+  - name: copy-training-checkpoint-data
+    container:
+      args: [--data-dir, '{{inputs.parameters.data_dir}}', --checkpoint-dir, '{{inputs.parameters.checkpoint_dir}}',
+        --action, copy_data, --model-dir, '{{inputs.parameters.working_dir}}/{{workflow.uid}}/model_output',
+        --copy-output-path, /tmp/outputs/copy_output_path/data]
+      command: []
+      env:
+      - {name: KFP_POD_NAME, value: '{{pod.name}}'}
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      image: gcr.io/google-samples/ml-pipeline-t2ttrain:v3ap
+    inputs:
+      parameters:
+      - {name: checkpoint_dir}
+      - {name: data_dir}
+      - {name: working_dir}
+    outputs:
+      parameters:
+      - name: copy-training-checkpoint-data-copy_output_path
+        valueFrom: {path: /tmp/outputs/copy_output_path/data}
+      artifacts:
+      - {name: copy-training-checkpoint-data-copy_output_path, path: /tmp/outputs/copy_output_path/data}
+    metadata:
+      labels:
+        add-pod-env: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "A Kubeflow
+          Pipeline component to copy training checkpoint data from one bucket\nto
+          another\n", "implementation": {"container": {"args": ["--data-dir", {"inputValue":
+          "data_dir"}, "--checkpoint-dir", {"inputValue": "checkpoint_dir"}, "--action",
+          {"inputValue": "action"}, "--model-dir", {"inputValue": "model_dir"}, "--copy-output-path",
+          {"outputPath": "copy_output_path"}], "env": {"KFP_POD_NAME": "{{pod.name}}"},
+          "image": "gcr.io/google-samples/ml-pipeline-t2ttrain:v3ap"}}, "inputs":
+          [{"description": "...", "name": "data_dir", "type": "GCSPath"}, {"description":
+          "...", "name": "checkpoint_dir", "type": "GCSPath"}, {"description": "...",
+          "name": "model_dir", "type": "GCSPath"}, {"description": "...", "name":
+          "action", "type": "String"}], "metadata": {"labels": {"add-pod-env": "true"}},
+          "name": "Copy training checkpoint data", "outputs": [{"description": "...",
+          "name": "copy_output_path", "type": "GCSPath"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "d75c441452c1fe71da5b054982725975c399d8d96ec8896e7cb960a11bd1591e", "url":
+          "https://raw.githubusercontent.com/kubeflow/examples/master/github_issue_summarization/pipelines/components/t2t/datacopy_component.yaml"}'}
+  - name: github-issue-summarization
+    inputs:
+      parameters:
+      - {name: checkpoint_dir}
+      - {name: data_dir}
+      - {name: deploy_webapp}
+      - {name: github_token}
+      - {name: train_steps}
+      - {name: working_dir}
+    dag:
+      tasks:
+      - name: condition-1
+        template: condition-1
+        when: '"{{tasks.train-t2t-model.outputs.parameters.train-t2t-model-launch_server}}"
+          == "true"'
+        dependencies: [serve, train-t2t-model]
+        arguments:
+          parameters:
+          - {name: github_token, value: '{{inputs.parameters.github_token}}'}
+      - name: copy-training-checkpoint-data
+        template: copy-training-checkpoint-data
+        arguments:
+          parameters:
+          - {name: checkpoint_dir, value: '{{inputs.parameters.checkpoint_dir}}'}
+          - {name: data_dir, value: '{{inputs.parameters.data_dir}}'}
+          - {name: working_dir, value: '{{inputs.parameters.working_dir}}'}
+      - name: serve
+        template: serve
+        dependencies: [train-t2t-model]
+        arguments:
+          parameters:
+          - {name: train-t2t-model-train_output_path, value: '{{tasks.train-t2t-model.outputs.parameters.train-t2t-model-train_output_path}}'}
+      - name: train-t2t-model
+        template: train-t2t-model
+        dependencies: [copy-training-checkpoint-data]
+        arguments:
+          parameters:
+          - {name: copy-training-checkpoint-data-copy_output_path, value: '{{tasks.copy-training-checkpoint-data.outputs.parameters.copy-training-checkpoint-data-copy_output_path}}'}
+          - {name: data_dir, value: '{{inputs.parameters.data_dir}}'}
+          - {name: deploy_webapp, value: '{{inputs.parameters.deploy_webapp}}'}
+          - {name: train_steps, value: '{{inputs.parameters.train_steps}}'}
+  - name: serve
+    container:
+      args: [--model_name, 'ghsumm-{{workflow.uid}}', --model_path, '{{inputs.parameters.train-t2t-model-train_output_path}}',
+        --namespace, default]
+      image: gcr.io/google-samples/ml-pipeline-kubeflow-tfserve:v6
+    inputs:
+      parameters:
+      - {name: train-t2t-model-train_output_path}
+  - name: train-t2t-model
+    container:
+      args: [--data-dir, '{{inputs.parameters.data_dir}}', --action, train, --model-dir,
+        '{{inputs.parameters.copy-training-checkpoint-data-copy_output_path}}', --train-steps,
+        '{{inputs.parameters.train_steps}}', --deploy-webapp, '{{inputs.parameters.deploy_webapp}}',
+        --train-output-path, /tmp/outputs/train_output_path/data]
+      command: []
+      env:
+      - {name: KFP_POD_NAME, value: '{{pod.name}}'}
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      image: gcr.io/google-samples/ml-pipeline-t2ttrain:v3ap
+      resources:
+        limits: {nvidia.com/gpu: 1}
+    inputs:
+      parameters:
+      - {name: copy-training-checkpoint-data-copy_output_path}
+      - {name: data_dir}
+      - {name: deploy_webapp}
+      - {name: train_steps}
+    outputs:
+      parameters:
+      - name: train-t2t-model-launch_server
+        valueFrom: {path: /tmp/output}
+      - name: train-t2t-model-train_output_path
+        valueFrom: {path: /tmp/outputs/train_output_path/data}
+      artifacts:
+      - {name: mlpipeline-ui-metadata, path: /mlpipeline-ui-metadata.json}
+      - {name: train-t2t-model-launch_server, path: /tmp/output}
+      - {name: train-t2t-model-train_output_path, path: /tmp/outputs/train_output_path/data}
+    metadata:
+      labels:
+        add-pod-env: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "A Kubeflow
+          Pipeline component to train a Tensor2Tensor\nmodel\n", "implementation":
+          {"container": {"args": ["--data-dir", {"inputValue": "data_dir"}, "--action",
+          {"inputValue": "action"}, "--model-dir", {"inputValue": "model_dir"}, "--train-steps",
+          {"inputValue": "train_steps"}, "--deploy-webapp", {"inputValue": "deploy_webapp"},
+          "--train-output-path", {"outputPath": "train_output_path"}], "env": {"KFP_POD_NAME":
+          "{{pod.name}}"}, "fileOutputs": {"MLPipeline UI metadata": "/mlpipeline-ui-metadata.json",
+          "launch_server": "/tmp/output"}, "image": "gcr.io/google-samples/ml-pipeline-t2ttrain:v3ap"}},
+          "inputs": [{"default": 2019300, "description": "...", "name": "train_steps",
+          "type": "Integer"}, {"description": "...", "name": "data_dir", "type": "GCSPath"},
+          {"description": "...", "name": "model_dir", "type": "GCSPath"}, {"description":
+          "...", "name": "action", "type": "String"}, {"description": "...", "name":
+          "deploy_webapp", "type": "String"}], "metadata": {"labels": {"add-pod-env":
+          "true"}}, "name": "Train T2T model", "outputs": [{"description": "...",
+          "name": "launch_server", "type": "String"}, {"description": "...", "name":
+          "train_output_path", "type": "GCSPath"}, {"name": "MLPipeline UI metadata",
+          "type": "UI metadata"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "cce12a820c4b993f187420eab7161b8f70ef5465c732675650e892431c74f30f", "url":
+          "https://raw.githubusercontent.com/kubeflow/examples/master/github_issue_summarization/pipelines/components/t2t/train_component.yaml"}'}
+  - name: webapp
+    container:
+      args: [--model_name, 'ghsumm-{{workflow.uid}}', --github_token, '{{inputs.parameters.github_token}}',
+        --namespace, default]
+      image: gcr.io/google-samples/ml-pipeline-webapp-launcher:v1
+    inputs:
+      parameters:
+      - {name: github_token}
+  arguments:
+    parameters:
+    - {name: train_steps, value: '2019300'}
+    - {name: project, value: YOUR_PROJECT_HERE}
+    - {name: github_token, value: YOUR_GITHUB_TOKEN_HERE}
+    - {name: working_dir, value: 'gs://YOUR_GCS_DIR_HERE'}
+    - {name: checkpoint_dir, value: 'gs://aju-dev-demos-codelabs/kubecon/model_output_tbase.bak2019000/'}
+    - name: deploy_webapp
+      value: "true"
+    - {name: data_dir, value: 'gs://aju-dev-demos-codelabs/kubecon/t2t_data_gh_all/'}
+  serviceAccountName: pipeline-runner
