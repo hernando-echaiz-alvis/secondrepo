@@ -1,0 +1,169 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: mypipelinenew-
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.12, pipelines.kubeflow.org/pipeline_compilation_time: '2022-06-02T21:44:33.585994',
+    pipelines.kubeflow.org/pipeline_spec: '{"inputs": [{"default": "/home/jovyan/nttdata/testprueba03.txt",
+      "name": "ofile", "optional": true, "type": "String"}, {"default": "utf8", "name":
+      "encmode", "optional": true, "type": "String"}, {"default": "12345", "name":
+      "mens", "optional": true, "type": "Integer"}], "name": "Mypipelinenew"}'}
+  labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.12}
+spec:
+  entrypoint: mypipelinenew
+  templates:
+  - name: mypipelinenew
+    inputs:
+      parameters:
+      - {name: encmode}
+      - {name: mens}
+      - {name: ofile}
+    dag:
+      tasks:
+      - name: writemessage01
+        template: writemessage01
+        arguments:
+          parameters:
+          - {name: encmode, value: '{{inputs.parameters.encmode}}'}
+          - {name: mens, value: '{{inputs.parameters.mens}}'}
+      - name: writemessage02
+        template: writemessage02
+        dependencies: [writemessage01]
+        arguments:
+          parameters:
+          - {name: encmode, value: '{{inputs.parameters.encmode}}'}
+          - {name: ofile, value: '{{inputs.parameters.ofile}}'}
+          artifacts:
+          - {name: writemessage01-target, from: '{{tasks.writemessage01.outputs.artifacts.writemessage01-target}}'}
+  - name: writemessage01
+    container:
+      args: [--encodingmode, '{{inputs.parameters.encmode}}', --msg, '{{inputs.parameters.mens}}',
+        --target, /tmp/outputs/target/data]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def writemessage01(encodingmode,msg,target):
+            with open(target,'w',encoding = encodingmode) as f:
+                f.write(str(msg))
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Writemessage01', description='')
+        _parser.add_argument("--encodingmode", dest="encodingmode", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--msg", dest="msg", type=int, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--target", dest="target", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = writemessage01(**_parsed_args)
+      image: python:3.7
+      volumeMounts:
+      - {mountPath: /home/jovyan/, name: pvc-0de9183f-e64e-449e-9ea1-ae4699df69ee}
+    inputs:
+      parameters:
+      - {name: encmode}
+      - {name: mens}
+    outputs:
+      artifacts:
+      - {name: writemessage01-target, path: /tmp/outputs/target/data}
+    metadata:
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.12
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--encodingmode", {"inputValue": "encodingmode"}, "--msg", {"inputValue":
+          "msg"}, "--target", {"outputPath": "target"}], "command": ["sh", "-ec",
+          "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def _make_parent_dirs_and_return_path(file_path:
+          str):\n    import os\n    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return
+          file_path\n\ndef writemessage01(encodingmode,msg,target):\n    with open(target,''w'',encoding
+          = encodingmode) as f:\n        f.write(str(msg))\n\nimport argparse\n_parser
+          = argparse.ArgumentParser(prog=''Writemessage01'', description='''')\n_parser.add_argument(\"--encodingmode\",
+          dest=\"encodingmode\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--msg\",
+          dest=\"msg\", type=int, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--target\",
+          dest=\"target\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = writemessage01(**_parsed_args)\n"], "image": "python:3.7"}}, "inputs":
+          [{"name": "encodingmode", "type": "String"}, {"name": "msg", "type": "Integer"}],
+          "name": "Writemessage01", "outputs": [{"name": "target", "type": "String"}]}',
+        pipelines.kubeflow.org/component_ref: '{}', pipelines.kubeflow.org/arguments.parameters: '{"encodingmode":
+          "{{inputs.parameters.encmode}}", "msg": "{{inputs.parameters.mens}}"}'}
+    volumes:
+    - name: pvc-0de9183f-e64e-449e-9ea1-ae4699df69ee
+      persistentVolumeClaim: {claimName: workspace-firstnotebookhe}
+  - name: writemessage02
+    container:
+      args: [--outputfile, '{{inputs.parameters.ofile}}', --encodingmode, '{{inputs.parameters.encmode}}',
+        --ifile, /tmp/inputs/ifile/data]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def writemessage02(outputfile, encodingmode,ifile):
+
+            infile = open(ifile,"r")
+            ilines = infile.read()
+            infile.close()
+            with open(outputfile,'w',encoding = encodingmode) as f:
+                f.write(ilines)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Writemessage02', description='')
+        _parser.add_argument("--outputfile", dest="outputfile", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--encodingmode", dest="encodingmode", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--ifile", dest="ifile", type=str, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = writemessage02(**_parsed_args)
+      image: python:3.7
+      volumeMounts:
+      - {mountPath: /home/jovyan/, name: pvc-0de9183f-e64e-449e-9ea1-ae4699df69ee}
+    inputs:
+      parameters:
+      - {name: encmode}
+      - {name: ofile}
+      artifacts:
+      - {name: writemessage01-target, path: /tmp/inputs/ifile/data}
+    metadata:
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.12
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--outputfile", {"inputValue": "outputfile"}, "--encodingmode",
+          {"inputValue": "encodingmode"}, "--ifile", {"inputPath": "ifile"}], "command":
+          ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def writemessage02(outputfile, encodingmode,ifile):\n\n    infile
+          = open(ifile,\"r\")\n    ilines = infile.read()\n    infile.close()\n    with
+          open(outputfile,''w'',encoding = encodingmode) as f:\n        f.write(ilines)\n\nimport
+          argparse\n_parser = argparse.ArgumentParser(prog=''Writemessage02'', description='''')\n_parser.add_argument(\"--outputfile\",
+          dest=\"outputfile\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--encodingmode\",
+          dest=\"encodingmode\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--ifile\",
+          dest=\"ifile\", type=str, required=True, default=argparse.SUPPRESS)\n_parsed_args
+          = vars(_parser.parse_args())\n\n_outputs = writemessage02(**_parsed_args)\n"],
+          "image": "python:3.7"}}, "inputs": [{"name": "outputfile", "type": "String"},
+          {"name": "encodingmode", "type": "String"}, {"name": "ifile", "type": "String"}],
+          "name": "Writemessage02"}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"encodingmode": "{{inputs.parameters.encmode}}",
+          "outputfile": "{{inputs.parameters.ofile}}"}'}
+    volumes:
+    - name: pvc-0de9183f-e64e-449e-9ea1-ae4699df69ee
+      persistentVolumeClaim: {claimName: workspace-firstnotebookhe}
+  arguments:
+    parameters:
+    - {name: ofile, value: /home/jovyan/nttdata/testprueba03.txt}
+    - {name: encmode, value: utf8}
+    - {name: mens, value: '12345'}
+  serviceAccountName: pipeline-runner
